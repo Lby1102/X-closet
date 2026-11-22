@@ -1,0 +1,14 @@
+﻿# X Closet · 刘博远模块（识别 / 衣橱 / 以图搜衣 / 喜好图片 / 趋势 RAG / 偏好记忆）
+# 复跑所需的最小依赖：Python 3.10+（本机 3.14.2），测试用标准库 unittest，不依赖 pytest。
+pydantic>=2.5,<3      # 02 契约模型与字段校验（Tags / Garment / Candidate / Job）
+httpx>=0.27           # 趋势采集的真实抓取；tests/test_trends.py 直接 import httpx
+
+# 可选：郭子骏的 FastAPI 路由落地后再安装（当前用 stdlib Mock 壳）
+# fastapi>=0.110
+# uvicorn>=0.29
+
+# 复跑（在 backend/ 目录下）：
+#   python -m pip install -r requirements-liuboyuan.txt
+#   python -m unittest discover -s tests -q
+# 起一个 Mock HTTP 服务（前端联调）：
+#   python -m app.liuboyuan.http_server --port 8010 --users u_1,u_demo
