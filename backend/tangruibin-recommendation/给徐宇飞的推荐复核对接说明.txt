@@ -1,0 +1,98 @@
+X-Closet 推荐模块与复核模块对接说明 v1
+
+徐宇飞你好，
+
+我把推荐侧与复核侧需要对接的内容整理在这里，接口按项目 v1 约定统一好了。推荐侧现在会用四个参数调用复核函数，不需要你再确认接口形式。
+
+一、双方统一使用的接口
+
+Python 内部调用：
+
+    result = await review.check(user_id, draft, weather, profile)
+
+参数含义：
+- user_id：当前用户 ID。复核模块用它查询该用户自己的已确认衣橱。
+- draft：尚未保存的推荐草案，不是整份 HTTP 请求，也不是保存后的 Recommendation。
+- weather：本次推荐使用的天气数据。
+- profile：本次推荐使用的用户偏好资料。
+
+draft 的结构：
+
+    {
+      "outfits": [
+        {
+          "garment_ids": ["衣物ID1", "衣物ID2"],
+          "reason": "这套搭配的理由"
+        }
+      ]
+    }
+
+返回结构：
+
+    {
+      "passed": true,
+      "issues": []
+    }
+
+未通过时示例：
+
+    {
+      "passed": false,
+      "issues": [
+        {
+          "garment_id": "g_fx_missing",
+          "reason": "当前用户的已确认衣橱中没有这件单品，请从该衣橱选择替代单品。"
+        }
+      ]
+    }
+
+这是内部 Python 函数的返回值，不需要外包一层 HTTP 的 data。衣橱数据由复核模块按 user_id 查询，不作为第五个参数传入。复核模块返回 passed 和 issues；NO_VALID_OUTFIT 由推荐任务在修订后仍失败时产生，不由复核函数返回。
+
+二、与刘博远 Mock 模块的衔接
+
+刘博远已交付说明中，推荐侧需要接入：
+- closet.search(user_id, image_id, limit=10)：只搜索该用户已确认衣物。推荐侧再与天气/禁忌过滤后的衣物取交集；交集不足时按项目规则补入合规衣物。
+- trends.search(scene, season, limit=3, user_id=user_id)：查询时传入当前 user_id。趋势失败作为 warning 继续推荐。当前推荐项目用 search_with_warnings 适配口统一返回 (趋势案例列表, warning 列表)，避免趋势故障中断推荐；真实模块接入时由适配器转换成这个格式。
+- memory.get(user_id)：读取偏好画像；推荐侧目前通过 profile.get(user_id) 适配口承接。
+
+刘博远提供的是 Mock/内存联调实现；本作业目录没有他的 PR 源码或共享后端，因此以上属于按其交付说明对齐的接口约定，不代表已经连上他的实际服务。刘的字段兼容差异是 style_tags 可能为单个字符串；推荐侧已兼容为单元素列表，标准形式仍是字符串数组。
+
+三、复核模块需要完成的检查
+
+请确认每件衣物都属于 user_id 对应的已确认衣橱，并检查搭配是否违反本次天气和用户明确禁忌。发现问题时，在 issues 中指出具体 garment_id，并用 reason 简要说明原因。reason 是给推荐模块看的说明，推荐模块按意思处理即可，不要求逐字匹配。
+
+四、双方的处理顺序
+
+1. 推荐模块生成尚未保存的 draft，并调用复核函数。
+2. passed=true：推荐模块保存 Recommendation，并返回成功结果。
+3. passed=false：推荐模块按 issues[].garment_id 找到问题衣物，参考对应 reason，从该用户已确认衣橱换入替代衣物，然后重新生成/提交草案复核一次。
+4. 第二次 passed=true：推荐模块保存结果。
+5. 第二次仍为 passed=false：不保存未通过的搭配；由推荐任务返回 NO_VALID_OUTFIT。
+
+最多修订一次。未通过的草案不能保存或展示为成功推荐。
+
+五、A/B 联调样例和期望
+
+以下是合成测试数据，不是真实用户衣橱或已经运行的结果。
+
+A：应通过
+- 用户：u_fx_review
+- 草案衣物：g_fx_top、g_fx_bottom、g_fx_shoes
+- 这三件都在该用户的已确认衣橱中。
+- 期望：passed=true，issues=[]；推荐模块随后保存。
+
+B：应拒绝并修订
+- 用户：u_fx_review
+- 草案衣物：g_fx_top、g_fx_bottom、g_fx_missing
+- g_fx_missing 不在该用户的已确认衣橱中。
+- 期望：passed=false；issues 指出 g_fx_missing 和原因。
+- 推荐模块可把鞋换回已确认衣橱里的 g_fx_shoes，再调用同一个复核函数。
+- 如果替换后通过才保存；如果再次不通过，不保存并由推荐任务返回 NO_VALID_OUTFIT。
+
+六、双方交付内容
+
+徐宇飞侧：提供可调用的 review.check 函数，使用上面的四参数接口和返回结构；提供 A 通过、B 拒绝的实际联调结果，并注明如何调用。
+
+唐睿彬推荐侧：生成符合上述结构的 draft；把 review.check 的结果用于通过/修订/不保存分支；保留复核问题供修订使用；通过后才保存 Recommendation；提供推荐请求、复核响应、request_id 和最终保存或失败结果作为联调记录。
+
+目前推荐项目已统一成四参数调用。目录中的本地复核器是演示实现，不代表已经接入徐宇飞的真实复核器。A/B 的 expected 是联调目标，实际结果要在双方连通后记录。
