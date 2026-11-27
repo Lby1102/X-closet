@@ -141,6 +141,52 @@ class LocalReview:
         return ReviewResult(passed=not issues, issues=issues)
 
 
+class WardrobeServiceAdapter:
+    """Translate the team's wardrobe.list / closet.search APIs to recommendation ports."""
+
+    def __init__(self, wardrobe, closet):
+        self.wardrobe = wardrobe
+        self.closet = closet
+
+    async def list_confirmed(self, user_id: str) -> list[Garment]:
+        items = await self.wardrobe.list(user_id)
+        return [Garment.model_validate(item.model_dump()) for item in items]
+
+    async def search(self, user_id: str, image_id: str, limit: int = 10) -> list[Candidate]:
+        items = await self.closet.search(user_id, image_id, limit=limit)
+        return [Candidate.model_validate(item.model_dump()) for item in items]
+
+
+class MemoryProfileAdapter:
+    """Translate memory.get(user_id) to the recommendation Profile port."""
+
+    def __init__(self, memory):
+        self.memory = memory
+
+    async def get(self, user_id: str) -> Profile:
+        profile = await self.memory.get(user_id)
+        return Profile.model_validate(profile.model_dump())
+
+
+class TrendsServiceAdapter:
+    """Normalize the team's trends search result and warning tuple."""
+
+    def __init__(self, trends):
+        self.trends = trends
+
+    async def search(self, scene: str, season: str, limit: int = 3,
+                     user_id: str | None = None) -> list[Trend]:
+        items = await self.trends.search(scene, season, limit=limit, user_id=user_id)
+        return [Trend.model_validate(item.model_dump()) for item in items]
+
+    async def search_with_warnings(self, scene: str, season: str, limit: int = 3,
+                                   *, user_id: str) -> tuple[list[Trend], list[str]]:
+        items, warnings = await self.trends.search_with_warnings(
+            scene, season, limit=limit, user_id=user_id
+        )
+        return [Trend.model_validate(item.model_dump()) for item in items], list(warnings)
+
+
 def season_for(day: date) -> str:
     return {12: "winter", 1: "winter", 2: "winter", 3: "spring", 4: "spring", 5: "spring",
             6: "summer", 7: "summer", 8: "summer", 9: "autumn", 10: "autumn", 11: "autumn"}[day.month]

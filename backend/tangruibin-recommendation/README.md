@@ -4,17 +4,44 @@
 
 ## 启动
 
-需要 Python 3.10 或更新版本。请先把 PowerShell 的当前目录切换到这个 `作业项目主体` 文件夹，再运行下面的命令。`.env.example` 和 `.gitignore` 都随本文件夹一起提交，因此整个文件夹可以单独打包。
+需要 Python 3.10 或更新版本，建议安装 Python 3.12。安装包可从 [Python 官方 Windows 下载页](https://www.python.org/downloads/windows/)获取。安装后关闭并重新打开 PowerShell，确认 `py --version` 能显示版本号。
+
+先在 PowerShell 切换到本 README 所在的项目目录。首次运行时复制本地环境配置：
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
 Copy-Item .env.example .env
+notepad .env
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+若 PowerShell 阻止激活虚拟环境，可跳过激活，改用：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+
 服务默认只接受预置演示用户 `demo-user`。发送请求时带 `X-User-Id: demo-user`。启动时会读取本文件夹的 `.env`；修改其中的 `ALLOWED_USER_IDS` 可设置本地演示用户列表。生产环境必须替换为项目统一的用户认证和隔离实现。
+
+### 与共享服务接口对接
+
+推荐流程保留了共享服务的接口适配层，不包含组员 Mock 的实现或演示数据。对接关系如下：
+
+| 推荐模块端口 | 共享服务接口 |
+| --- | --- |
+| `WardrobePort.list_confirmed(user_id)` | `wardrobe.list(user_id)` |
+| `WardrobePort.search(user_id, image_id, limit)` | `closet.search(user_id, image_id, limit)` |
+| `ProfilePort.get(user_id)` | `memory.get(user_id)` |
+| `TrendPort.search_with_warnings(...)` | `trends.search_with_warnings(..., user_id=user_id)` |
+
+`app/integrations.py` 提供组合入口；应用接入时把共享服务实例传入即可。用户 ID 会由推荐流程透传给衣橱、图片检索、画像和趋势接口。当前独立运行仍使用项目自带的 `Demo*` 服务。
+
+默认演示账号仍为 `demo-user`。衣橱、图片、任务和推荐都保存在进程内存中，重启服务会重新生成演示数据。
 
 ## 一次推荐请求
 
